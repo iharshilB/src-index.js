@@ -1,30 +1,35 @@
-// Handle Telegram webhook
-if (request.method === 'POST' && request.headers.get('content-type') === 'application/json') {
-  try {
-    const update = await request.json();
-    
-    // DEBUG: Log received message
-    console.log('Received:', update.message?.text);
-    
-    // Send immediate reply for ANY message
-    if (update.message?.text) {
-      const chatId = update.message.chat.id;
-      const text = update.message.text;
-      
-      // Send reply directly (bypass other functions)
-      await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          chat_id: chatId,
-          text: `✅ Echo: ${text}`
-        })
-      });
+export default {
+  async fetch(request, env) {
+    // 1. Check if it's a POST request (Telegram webhooks are always POST)
+    if (request.method === 'POST') {
+      try {
+        const update = await request.json();
+        
+        // Use 'env.macrobot' to match your Cloudflare Dashboard binding
+        const botToken = env.macrobot; 
+        
+        if (update.message && update.message.text) {
+          const chatId = update.message.chat.id;
+          const userText = update.message.text;
+          
+          // Use 'await' to ensure the message sends before the worker shuts down
+          await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              chat_id: chatId,
+              text: `✅ Qwen code fixed! You said: ${userText}`
+            })
+          });
+        }
+        
+        return new Response('OK', { status: 200 });
+      } catch (error) {
+        // If it crashes, this will show up in your 'Logs' tab
+        return new Response(`Error: ${error.message}`, { status: 500 });
+      }
     }
     
-    return new Response('OK', { status: 200 });
-  } catch (error) {
-    console.error('Error:', error);
-    return new Response('Error', { status: 500 });
+    return new Response('Send a POST request from Telegram!', { status: 200 });
   }
-}
+};
