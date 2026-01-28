@@ -45,6 +45,7 @@ export default {
     // Webhook info endpoint
     if (request.method === 'GET' && url.pathname === '/webhook') {
       try {
+        // FIXED: Removed space after "bot"
         const response = await fetch(
           `https://api.telegram.org/bot${environment.TELEGRAM_BOT_TOKEN}/getWebhookInfo`
         );
