@@ -1,35 +1,67 @@
+/**
+ * MACRO ANALYSIS TELEGRAM BOT
+ * Cloudflare Workers Entry Point
+ * 
+ * DESIGN PHILOSOPHY:
+ * - Reliability > features
+ * - Never fail silently
+ * - Institutional tone, no trading signals
+ * - Graceful fallbacks are features
+ */
+
+import { handleWebhook } from './telegram/webhook.js';
+import { logRequest, logError } from './utils/logger.js';
+
+/**
+ * Main Worker fetch handler
+ * Execution chain: Telegram → Webhook → Worker → Logic → API → Analysis → Response
+ */
 export default {
-  async fetch(request, env) {
-    // 1. Check if it's a POST request (Telegram webhooks are always POST)
-    if (request.method === 'POST') {
-      try {
-        const update = await request.json();
-        
-        // Use 'env.macrobot' to match your Cloudflare Dashboard binding
-        const botToken = env.macrobot; 
-        
-        if (update.message && update.message.text) {
-          const chatId = update.message.chat.id;
-          const userText = update.message.text;
-          
-          // Use 'await' to ensure the message sends before the worker shuts down
-          await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              chat_id: chatId,
-              text: `✅ Qwen code fixed! You said: ${userText}`
-            })
-          });
-        }
-        
-        return new Response('OK', { status: 200 });
-      } catch (error) {
-        // If it crashes, this will show up in your 'Logs' tab
-        return new Response(`Error: ${error.message}`, { status: 500 });
-      }
-    }
+  async fetch(request, env, ctx) {
+    const start = Date.now();
     
-    return new Response('Send a POST request from Telegram!', { status: 200 });
+    try {
+      // Log incoming request
+      logRequest(request, env);
+      
+      // Route to Telegram webhook handler
+      const response = await handleWebhook(request, env, ctx);
+      
+      // Log response time
+      const duration = Date.now() - start;
+      console.log(`Request completed in ${duration}ms`);
+      
+      return response;
+      
+    } catch (error) {
+      logError('Worker fetch failed', error, env);
+      
+      // NEVER fail silently - always respond to Telegram
+      return new Response(
+        JSON.stringify({
+          method: 'sendMessage',
+          chat_id: extractChatId(request),
+          text: 'Service experiencing temporary constraints. I\'ll reassess conditions shortly.',
+          parse_mode: 'Markdown'
+        }),
+        {
+          headers: { 'Content-Type': 'application/json' },
+          status: 200 // Always 200 to Telegram to prevent retries
+        }
+      );
+    }
   }
 };
+
+/**
+ * Extract chat_id from request for error fallback
+ */
+function extractChatId(request) {
+  try {
+    const url = new URL(request.url);
+    const chatId = url.searchParams.get('chat_id');
+    return chatId || null;
+  } catch {
+    return null;
+  }
+}
